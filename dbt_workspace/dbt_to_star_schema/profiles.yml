@@ -1,0 +1,16 @@
+dbt_to_star_schema:
+  target: dev
+  outputs:
+    dev:
+      type: postgres
+      host: host.docker.internal
+      user: admin
+      pass: adminpassword
+      port: 5432
+      dbname: retail_db
+      schema: star_schema
+      threads: 1
+
+
+# NOTE: Normally profiles.yml kept in a hidden ~/.dbt/ directory for credential security.
+# But It wax placed in the project root here strictly for local learning/development.

@@ -2,7 +2,6 @@ import psycopg2
 from faker import Faker
 import random
 
-# Initialize Faker library for synthetic data generation
 fake = Faker()
 
 # Connect to PostgreSQL running inside the Docker container
@@ -17,103 +16,174 @@ cursor = conn.cursor()
 
 print("Connected to PostgreSQL successfully.")
 
-# 1. Create Schema and Tables
+# Create Schema and Tables matching the exact schema diagram
 create_tables_query = """
-CREATE SCHEMA IF NOT EXISTS staging_schema;
+DROP SCHEMA IF EXISTS staging_schema CASCADE;
+CREATE SCHEMA staging_schema;
 
--- Items Table
-CREATE TABLE IF NOT EXISTS staging_schema.Items (
-    sku VARCHAR(50) PRIMARY KEY,
-    price DECIMAL(10, 2),
-    name VARCHAR(255),
-    brand VARCHAR(100)
+-- 1. Product Lines
+CREATE TABLE staging_schema.productlines (
+    productLine VARCHAR(50) PRIMARY KEY,
+    textDescription TEXT,
+    htmlDescription TEXT,
+    image BYTEA
 );
 
--- Stores Table
-CREATE TABLE IF NOT EXISTS staging_schema.Stores (
-    store_id SERIAL PRIMARY KEY,
-    store_name VARCHAR(255),
-    store_city VARCHAR(100),
-    store_zipcode VARCHAR(20)
+-- 2. Offices
+CREATE TABLE staging_schema.offices (
+    officeCode VARCHAR(50) PRIMARY KEY,
+    city VARCHAR(50),
+    phone VARCHAR(50),
+    addressLine1 VARCHAR(50),
+    addressLine2 VARCHAR(50),
+    state VARCHAR(50),
+    country VARCHAR(50),
+    postalCode VARCHAR(50),
+    territory VARCHAR(50)
 );
 
--- Customers Table
-CREATE TABLE IF NOT EXISTS staging_schema.Customers (
-    customer_id SERIAL PRIMARY KEY,
-    customer_name VARCHAR(255),
-    customer_zipcode VARCHAR(20)
+-- 3. Employees
+CREATE TABLE staging_schema.employees (
+    employeeNumber INT PRIMARY KEY,
+    lastName VARCHAR(50),
+    firstName VARCHAR(50),
+    extension VARCHAR(50),
+    email VARCHAR(100),
+    officeCode VARCHAR(50) REFERENCES staging_schema.offices(officeCode),
+    reportsTo INT,
+    jobTitle VARCHAR(50)
 );
 
--- Orders Table
-CREATE TABLE IF NOT EXISTS staging_schema.Orders (
-    order_id SERIAL PRIMARY KEY,
-    customer_id INT REFERENCES staging_schema.Customers(customer_id),
-    store_id INT REFERENCES staging_schema.Stores(store_id),
-    order_date DATE
+-- 4. Products
+CREATE TABLE staging_schema.products (
+    productCode VARCHAR(50) PRIMARY KEY,
+    productName VARCHAR(100),
+    productLine VARCHAR(50) REFERENCES staging_schema.productlines(productLine),
+    productScale VARCHAR(50),
+    productVendor VARCHAR(50),
+    productDescription TEXT,
+    quantityInStock SMALLINT,
+    buyPrice DECIMAL(10,2),
+    MSRP DECIMAL(10,2)
 );
 
--- Order Items Table
-CREATE TABLE IF NOT EXISTS staging_schema.Order_Items (
-    order_id INT REFERENCES staging_schema.Orders(order_id),
-    item_line_number INT,
-    item_sku VARCHAR(50) REFERENCES staging_schema.Items(sku),
-    item_quantity INT,
-    PRIMARY KEY (order_id, item_line_number)
+-- 5. Customers
+CREATE TABLE staging_schema.customers (
+    customerNumber INT PRIMARY KEY,
+    customerName VARCHAR(50),
+    contactLastName VARCHAR(50),
+    contactFirstName VARCHAR(50),
+    phone VARCHAR(50),
+    addressLine1 VARCHAR(50),
+    addressLine2 VARCHAR(50),
+    city VARCHAR(50),
+    state VARCHAR(50),
+    postalCode VARCHAR(50),
+    country VARCHAR(50),
+    salesRepEmployeeNumber INT REFERENCES staging_schema.employees(employeeNumber),
+    creditLimit DECIMAL(10,2)
+);
+
+-- 6. Orders
+CREATE TABLE staging_schema.orders (
+    orderNumber INT PRIMARY KEY,
+    orderDate DATE,
+    requiredDate DATE,
+    shippedDate DATE,
+    status VARCHAR(50),
+    comments TEXT,
+    customerNumber INT REFERENCES staging_schema.customers(customerNumber)
+);
+
+-- 7. Order Details
+CREATE TABLE staging_schema.orderdetails (
+    orderNumber INT REFERENCES staging_schema.orders(orderNumber),
+    productCode VARCHAR(50) REFERENCES staging_schema.products(productCode),
+    quantityOrdered INT,
+    priceEach DECIMAL(10,2),
+    orderLineNumber SMALLINT,
+    PRIMARY KEY (orderNumber, productCode)
+);
+
+-- 8. Payments
+CREATE TABLE staging_schema.payments (
+    customerNumber INT REFERENCES staging_schema.customers(customerNumber),
+    checkNumber VARCHAR(50),
+    paymentDate DATE,
+    amount DECIMAL(10,2),
+    PRIMARY KEY (customerNumber, checkNumber)
 );
 """
+
 cursor.execute(create_tables_query)
 conn.commit()
-print("Schema and Tables created successfully.")
+print("Tables created successfully. Inserting dummy data...")
 
-# 2. Insert Dummy Data
-print("Inserting dummy data...")
-
-# Insert 50 products
-skus = []
-for _ in range(50):
-    sku = fake.unique.ean(length=8)
-    skus.append(sku)
+# Insert Dummy Data to satisfy foreign key dependencies
+# --- Product Lines ---
+p_lines = ["Classic Cars", "Motorcycles", "Planes", "Ships", "Trains"]
+for line in p_lines:
     cursor.execute(
-        "INSERT INTO staging_schema.Items (sku, price, name, brand) VALUES (%s, %s, %s, %s)",
-        (sku, round(random.uniform(10.0, 500.0), 2), fake.word().capitalize(), fake.company())
+        "INSERT INTO staging_schema.productlines (productLine, textDescription) VALUES (%s, %s)",
+        (line, fake.text())
     )
 
-# Insert 10 stores
-store_ids = []
-for _ in range(10):
+# --- Offices ---
+office_codes = ["1", "2", "3"]
+for code in office_codes:
     cursor.execute(
-        "INSERT INTO staging_schema.Stores (store_name, store_city, store_zipcode) VALUES (%s, %s, %s) RETURNING store_id",
-        (f"Store {fake.word().capitalize()}", fake.city(), fake.zipcode())
+        "INSERT INTO staging_schema.offices (officeCode, city, country) VALUES (%s, %s, %s)",
+        (code, fake.city(), fake.country())
     )
-    store_ids.append(cursor.fetchone()[0])
 
-# Insert 100 customers
-customer_ids = []
-for _ in range(100):
+# --- Employees ---
+emp_numbers = [1001, 1002, 1003]
+for emp_id in emp_numbers:
     cursor.execute(
-        "INSERT INTO staging_schema.Customers (customer_name, customer_zipcode) VALUES (%s, %s) RETURNING customer_id",
-        (fake.name(), fake.zipcode())
+        "INSERT INTO staging_schema.employees (employeeNumber, lastName, firstName, officeCode) VALUES (%s, %s, %s, %s)",
+        (emp_id, fake.last_name(), fake.first_name(), random.choice(office_codes))
     )
-    customer_ids.append(cursor.fetchone()[0])
 
-# Insert 100 orders, each linked to line items in Order_Items
-for _ in range(100):
+# --- Products ---
+product_codes = [f"S{i}_100{i}" for i in range(1, 11)]
+for p_code in product_codes:
     cursor.execute(
-        "INSERT INTO staging_schema.Orders (customer_id, store_id, order_date) VALUES (%s, %s, %s) RETURNING order_id",
-        (random.choice(customer_ids), random.choice(store_ids), fake.date_this_year())
+        "INSERT INTO staging_schema.products (productCode, productName, productLine, buyPrice, MSRP) VALUES (%s, %s, %s, %s, %s)",
+        (p_code, fake.word().capitalize(), random.choice(p_lines), round(random.uniform(10, 100), 2), round(random.uniform(120, 200), 2))
     )
-    order_id = cursor.fetchone()[0]
-    
-    # Each order contains between 1 and 3 line items
-    num_items = random.randint(1, 3)
-    for line_num in range(1, num_items + 1):
+
+# --- Customers ---
+cust_numbers = [101, 102, 103, 104, 105]
+for c_num in cust_numbers:
+    cursor.execute(
+        "INSERT INTO staging_schema.customers (customerNumber, customerName, city, country, salesRepEmployeeNumber) VALUES (%s, %s, %s, %s, %s)",
+        (c_num, fake.company(), fake.city(), fake.country(), random.choice(emp_numbers))
+    )
+
+# --- Orders ---
+order_numbers = [5001, 5002, 5003]
+for o_num in order_numbers:
+    cursor.execute(
+        "INSERT INTO staging_schema.orders (orderNumber, orderDate, status, customerNumber) VALUES (%s, %s, %s, %s)",
+        (o_num, fake.date_this_year(), "Shipped", random.choice(cust_numbers))
+    )
+
+# --- Order Details ---
+for o_num in order_numbers:
+    for idx, p_code in enumerate(random.sample(product_codes, 2), start=1):
         cursor.execute(
-            "INSERT INTO staging_schema.Order_Items (order_id, item_line_number, item_sku, item_quantity) VALUES (%s, %s, %s, %s)",
-            (order_id, line_num, random.choice(skus), random.randint(1, 5))
+            "INSERT INTO staging_schema.orderdetails (orderNumber, productCode, quantityOrdered, priceEach, orderLineNumber) VALUES (%s, %s, %s, %s, %s)",
+            (o_num, p_code, random.randint(1, 10), round(random.uniform(50, 150), 2), idx)
         )
 
-# Commit changes and close database connection
+# --- Payments ---
+for c_num in cust_numbers:
+    cursor.execute(
+        "INSERT INTO staging_schema.payments (customerNumber, checkNumber, paymentDate, amount) VALUES (%s, %s, %s, %s)",
+        (c_num, f"HQ{random.randint(100000,999999)}", fake.date_this_year(), round(random.uniform(200, 1000), 2))
+    )
+
 conn.commit()
 cursor.close()
 conn.close()
-print("100 records inserted successfully. Database is ready!")
+print("Data inserted successfully!")
