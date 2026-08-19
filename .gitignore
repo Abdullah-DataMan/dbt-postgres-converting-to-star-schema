@@ -1,0 +1,4 @@
+__pycache__/
+dbt_workspace/logs/
+target/
+dbt_packages/
