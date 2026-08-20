@@ -37,5 +37,5 @@ The transformed dimensional model optimized for fast analytical queries:
 
 1. **Clone the repository:**
    ```bash
-   git clone [https://github.com/YOUR_USERNAME/dbt_to_star_schema.git](https://github.com/YOUR_USERNAME/dbt_to_star_schema.git)
+   git clone [https://github.com/DataMan/dbt_to_star_schema.git](https://github.com/YOUR_USERNAME/dbt_to_star_schema.git)
    cd dbt_to_star_schema
